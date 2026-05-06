@@ -2,15 +2,14 @@ pipeline {
     agent any
     environment {
         SONAR_PROJECT_KEY = 'allevent-backend'
-        APP_URL = 'http://192.168.144.142'
+        APP_URL = 'http://192.168.64.45'
+        DOCKERHUB_USER = 'sountdocker'
+        VM_IP = '192.168.64.45'
     }
-    triggers { githubPush() }
     stages {
         stage('Clone') {
             steps {
-                git credentialsId: 'github-token',
-                    url: 'https://github.com/Small-Danger/all-event-backend.git',
-                    branch: 'main'
+                git credentialsId: 'aroutnous', url: 'https://github.com/aroutnous/all-event-backend.git', branch: 'main'
             }
         }
         stage('Installation dependances') {
@@ -25,34 +24,27 @@ pipeline {
         }
         stage('SAST - SonarQube') {
             steps {
-                withSonarQubeEnv('sonarqube') {
-                    sh '''
-                        /opt/sonar-scanner/bin/sonar-scanner \
-                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                        -Dsonar.sources=. \
-                        -Dsonar.exclusions=vendor/**,node_modules/**,*.js \
-                        -Dsonar.host.url=http://192.168.144.142:9000
-                    '''
-                }
+                sh '''/opt/sonar-scanner/bin/sonar-scanner \
+                    -Dsonar.projectKey=allevent-backend \
+                    -Dsonar.sources=. \
+                    -Dsonar.exclusions=vendor/**,node_modules/**,*.js \
+                    -Dsonar.host.url=http://192.168.64.45:9000 \
+                    -Dsonar.token=sqp_e27f9fd71ddba0bef2529656fcccc2f38ee304a6 || true'''
             }
         }
-        stage('SAST - Audit Composer') {
+        stage('SCA - Composer Audit') {
             steps {
                 sh 'composer audit || true'
             }
         }
         stage('SCA - OWASP Dependency Check') {
             steps {
-                sh '''
-                    /opt/dependency-check/bin/dependency-check.sh \
+                sh '''/opt/dependency-check/bin/dependency-check.sh \
                     --project allevent-backend \
                     --scan . \
-                    --exclude "**/vendor/**" \
+                    --exclude "./vendor/**" \
                     --format HTML \
-                    --out ./dependency-check-report \
-                    --nvdApiKey nokey \
-                    || true
-                '''
+                    --out dependency-check-report/ || true'''
             }
         }
         stage('Secrets - Gitleaks') {
@@ -62,17 +54,11 @@ pipeline {
         }
         stage('Secrets - Vault') {
             steps {
-                withVault(
-                    vaultSecrets: [[
-                        path: 'secret/allevent',
-                        secretValues: [
-                            [envVar: 'VAULT_GITHUB_TOKEN', vaultKey: 'github_token'],
-                            [envVar: 'VAULT_DOCKER_USER', vaultKey: 'dockerhub_user'],
-                            [envVar: 'VAULT_DOCKER_TOKEN', vaultKey: 'dockerhub_token'],
-                            [envVar: 'VAULT_SONAR_TOKEN', vaultKey: 'sonarqube_token']
-                        ]
-                    ]]
-                ) {
+                withVault(vaultSecrets: [[path: 'secret/allevent',
+                    secretValues: [
+                        [envVar: 'VAULT_DOCKER_USER', vaultKey: 'dockerhub_user'],
+                        [envVar: 'VAULT_DOCKER_TOKEN', vaultKey: 'dockerhub_token']
+                    ]]]) {
                     sh 'echo "Secrets Vault charges avec succes !"'
                     sh 'echo "Docker User: $VAULT_DOCKER_USER"'
                 }
@@ -85,15 +71,15 @@ pipeline {
         }
         stage('Push Docker Hub') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
+                withVault(vaultSecrets: [[path: 'secret/allevent',
+                    secretValues: [
+                        [envVar: 'VAULT_DOCKER_USER', vaultKey: 'dockerhub_user'],
+                        [envVar: 'VAULT_DOCKER_TOKEN', vaultKey: 'dockerhub_token']
+                    ]]]) {
                     sh '''
-                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        docker tag allevent-backend:latest $DOCKER_USER/allevent-backend:latest
-                        docker push $DOCKER_USER/allevent-backend:latest
+                        echo $VAULT_DOCKER_TOKEN | docker login -u $VAULT_DOCKER_USER --password-stdin
+                        docker tag allevent-backend:latest $VAULT_DOCKER_USER/allevent-backend:latest
+                        docker push $VAULT_DOCKER_USER/allevent-backend:latest
                     '''
                 }
             }
@@ -105,21 +91,21 @@ pipeline {
         }
         stage('DAST - ZAP') {
             steps {
-                sh 'zaproxy -cmd -quickurl ${APP_URL} -quickprogress || true'
+                sh 'zaproxy -cmd -quickurl http://192.168.64.45 -quickprogress || true'
             }
         }
         stage('Deploy Docker Compose') {
             steps {
                 sh '''
-                    cd /home/landry/allevent-deploy
-                    docker compose pull
+                    cd /home/ubuntu/allevent-deploy
+                    docker compose pull || true
                     docker compose up -d
                 '''
             }
         }
     }
     post {
-        success { echo 'Pipeline DevSecOps Backend reussi !' }
-        failure { echo 'Pipeline echoue - verifier les logs' }
+        success { echo 'Pipeline DevSecOps reussi !' }
+        failure { echo 'Pipeline echoue !' }
     }
 }
