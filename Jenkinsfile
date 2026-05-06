@@ -100,16 +100,16 @@ pipeline {
         	'''
     		}
 	}
-
-        stage('Deploy Docker Compose') {
+	stage('Deploy Docker Compose') {
     steps {
         sh '''
             cd /var/lib/jenkins/allevent-deploy
             docker compose pull || true
-            docker compose up -d
+            docker compose up -d --remove-orphans --force-recreate
         '''
     }
 }
+
     }
     post {
         success { echo 'Pipeline DevSecOps reussi !' }
