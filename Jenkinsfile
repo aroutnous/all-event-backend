@@ -90,19 +90,26 @@ pipeline {
             }
         }
         stage('DAST - ZAP') {
-            steps {
-                sh 'zaproxy -cmd -quickurl http://192.168.64.45 -quickprogress || true'
-            }
-        }
+    	    steps {
+        	sh '''
+            	echo "DAST - OWASP ZAP"
+            	echo "Note: ZAP nest pas disponible pour ARM64 sur cette VM."
+	        echo "Sur architecture x86_64, la commande serait:"
+	        echo "zaproxy -cmd -quickurl http://192.168.64.45 -quickprogress"
+	        true
+        	'''
+    		}
+	}
+
         stage('Deploy Docker Compose') {
-            steps {
-                sh '''
-                    cd /home/ubuntu/allevent-deploy
-                    docker compose pull || true
-                    docker compose up -d
-                '''
-            }
-        }
+    steps {
+        sh '''
+            cd /var/lib/jenkins/allevent-deploy
+            docker compose pull || true
+            docker compose up -d
+        '''
+    }
+}
     }
     post {
         success { echo 'Pipeline DevSecOps reussi !' }
